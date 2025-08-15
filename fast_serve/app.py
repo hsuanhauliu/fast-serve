@@ -1,10 +1,14 @@
 import asyncio
 import inspect
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+
+# Get a logger for this module
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,7 +23,7 @@ def create_app(
     predict_func: Callable[..., Any] | Callable[..., Coroutine[Any, Any, Any]],
     response_model: Any = None,
     http_endpoint: str | None = "/predict",
-    websocket_endpoint: str | None = "/ws",
+    websocket_endpoint: str | None = "/ws/predict",
     http_methods: list[str] = ["POST"],
     config: FastAPIConfig | None = None,
 ) -> FastAPI:
@@ -64,7 +68,13 @@ def create_app(
 
     # Register the WebSocket endpoint if one is provided
     if websocket_endpoint:
-        from fastapi import WebSocket, WebSocketDisconnect
+        try:
+            from fastapi import WebSocket, WebSocketDisconnect
+        except ImportError:
+            raise ImportError(
+                "The 'websockets' library is required for WebSocket support. "
+                "Please install it with: pip install websockets"
+            )
 
         input_model = None
         try:
@@ -111,9 +121,9 @@ def create_app(
 
                     await websocket.send_json(output_data)
             except WebSocketDisconnect:
-                print("Client disconnected")
+                logger.info("Client disconnected from WebSocket.")
             except Exception as e:
-                print(f"An error occurred: {e}")
+                logger.error(f"An error occurred in the WebSocket: {e}", exc_info=True)
                 await websocket.send_json({"error": str(e)})
 
         app.add_api_websocket_route(websocket_endpoint, websocket_endpoint_func)
@@ -125,6 +135,9 @@ def create_app(
 if __name__ == "__main__":
     import uvicorn
 
+    # Configure basic logging for the example
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     class ModelInput(BaseModel):
         text: str
 
@@ -132,12 +145,12 @@ if __name__ == "__main__":
         prediction: str
 
     async def async_predict(data: ModelInput) -> ModelOutput:
-        print(f"Received async request: {data.text}")
+        logger.info(f"Received async request with text: '{data.text}'")
         await asyncio.sleep(1)
         return ModelOutput(prediction=f"Async prediction for: {data.text}")
 
     # Example of disabling the documentation endpoints
-    api_config = FastAPIConfig(enable_docs=True)
+    api_config = FastAPIConfig(enable_docs=False)
 
     app = create_app(
         predict_func=async_predict,

@@ -1,21 +1,34 @@
 # Fast Serve
 
-One-line code to spin up a HTTP inference server for your ML models.
+A lightweight library to quickly create a FastAPI application for serving machine learning models.
 
-In your Python code:
+This simple library is built on top of [FastAPI](https://fastapi.tiangolo.com/), and is easily customizable. It supports standard HTTP endpoints, WebSockets, and both synchronous and asynchronous prediction functions.
 
 ```python
-# return a FastAPI app
-app = create_app(binary_guess, response_model=Response)
+# in main.py
+# returns a FastAPI app
+app = create_app(
+        predict_func=inference_func,
+        response_model=ModelOutput,
+        http_endpoint="/predict",
+        websocket_endpoint="/ws/predict",
+    )
 ```
 
-To start the server:
+Run your application using an ASGI server like `uvicorn`.
 
 ```bash
-uvicorn examples.request_parsing:app --reload
+uvicorn main:app --reload
 ```
 
-This simple library is built on top of [FastAPI](https://fastapi.tiangolo.com/), and is easily customizable.
+This will start an app that routes HTTP requests to `/predict` and Websocket requests to `/ws/predict`.
+
+Example:
+
+```
+http://127.0.0.1/predict
+ws://127.0.0.1/ws/predict
+```
 
 ## Dev
 
