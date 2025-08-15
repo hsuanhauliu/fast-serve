@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -148,7 +149,7 @@ def test_full_app_endpoints(full_app):
 
 def test_http_endpoint_disabled():
     """Tests that the HTTP endpoint is not created when set to None."""
-    app = create_app(predict_func=sync_predict, http_endpoint=None)
+    app = create_app(predict_func=sync_predict, http_endpoint=None, websocket_endpoint="/ws")
     client = TestClient(app)
     response = client.post("/predict", json={"text": "test"})
     assert response.status_code == 404  # Not Found
@@ -161,3 +162,8 @@ def test_websocket_endpoint_disabled():
     with pytest.raises(Exception):  # Exact exception can vary
         with client.websocket_connect("/ws"):
             pass  # Should not connect
+
+def test_raises_error_if_no_endpoints():
+    """Tests that a ValueError is raised if both endpoints are None."""
+    with pytest.raises(ValueError):
+        create_app(predict_func=sync_predict, http_endpoint=None, websocket_endpoint=None)

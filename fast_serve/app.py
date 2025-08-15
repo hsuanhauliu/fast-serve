@@ -23,7 +23,7 @@ def create_app(
     predict_func: Callable[..., Any] | Callable[..., Coroutine[Any, Any, Any]],
     response_model: Any = None,
     http_endpoint: str | None = "/predict",
-    websocket_endpoint: str | None = "/ws/predict",
+    websocket_endpoint: str | None = None,
     http_methods: list[str] = ["POST"],
     config: FastAPIConfig | None = None,
 ) -> FastAPI:
@@ -47,6 +47,11 @@ def create_app(
     Returns:
         A FastAPI application instance.
     """
+    if http_endpoint is None and websocket_endpoint is None:
+        raise ValueError(
+            "At least one endpoint (http_endpoint or websocket_endpoint) must be provided."
+        )
+
     # Use default config if none is provided
     if config is None:
         config = FastAPIConfig()
