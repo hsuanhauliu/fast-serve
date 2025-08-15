@@ -37,7 +37,7 @@ def create_app(
         predict_func: The function that takes input and returns a prediction.
                       The first argument of this function should be type-hinted
                       with a Pydantic model for WebSocket support.
-        response_model: The Pydantic model for the HTTP response body.
+        response_model: The Pydantic model for the HTTP and WebSocket response body.
         http_endpoint: The path for the HTTP endpoint. If None, no HTTP endpoint is created.
         websocket_endpoint: The path for the WebSocket endpoint. If None, no WebSocket endpoint is created.
                             Requires the `websockets` library to be installed.
@@ -46,7 +46,11 @@ def create_app(
 
     Returns:
         A FastAPI application instance.
+    
+    Raises:
+        ValueError: If both http_endpoint and websocket_endpoint are None.
     """
+    # Add a check to ensure at least one endpoint is active
     if http_endpoint is None and websocket_endpoint is None:
         raise ValueError(
             "At least one endpoint (http_endpoint or websocket_endpoint) must be provided."
@@ -117,12 +121,32 @@ def create_app(
                     else:
                         prediction = predict_func(input_data)
 
-                    output_data = prediction
-                    if isinstance(prediction, BaseModel):
-                        if hasattr(prediction, 'model_dump'):
-                            output_data = prediction.model_dump()
-                        else:
-                            output_data = prediction.dict()
+                    output_data = None
+                    if response_model:
+                        try:
+                            # Pydantic's parsing methods can handle dicts or other model instances
+                            if hasattr(response_model, 'model_validate'):
+                                validated_output = response_model.model_validate(prediction)
+                            else:
+                                validated_output = response_model.parse_obj(prediction)
+                            
+                            # Serialize the validated model for JSON transmission
+                            if hasattr(validated_output, 'model_dump'):
+                                output_data = validated_output.model_dump()
+                            else:
+                                output_data = validated_output.dict()
+                        except Exception as validation_error:
+                            logger.error(f"WebSocket response validation error: {validation_error}", exc_info=True)
+                            await websocket.send_json({"error": "Internal server error: Invalid response format."})
+                            continue # Don't send the invalid data
+                    else:
+                        # Fallback to original behavior if no response_model is given
+                        output_data = prediction
+                        if isinstance(prediction, BaseModel):
+                            if hasattr(prediction, 'model_dump'):
+                                output_data = prediction.model_dump()
+                            else:
+                                output_data = prediction.dict()
 
                     await websocket.send_json(output_data)
             except WebSocketDisconnect:
