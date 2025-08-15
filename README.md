@@ -31,3 +31,12 @@ uvicorn examples.minimal:app --reload   # run example
 ```
 
 Then, <http://127.0.0.1:8000/docs> should be accessible.
+
+### Tests
+
+Run:
+
+```bash
+poetry install
+poetry run pytest
+```

@@ -29,4 +29,8 @@ def binary_guess(data: Request):
     return {"prediction": random.randint(0, 1) == 1}
 
 
-app = create_app(binary_guess, response_model=Response)
+app = create_app(
+    binary_guess,
+    response_model=Response,
+    websocket_endpoint="/predict"
+    )

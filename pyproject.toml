@@ -18,6 +18,9 @@ packages = [{include = "fast_serve", from = "."}]
 black = "^25.1.0"
 isort = "^6.0.1"
 uvicorn = "^0.34.2"
+pytest = "^8.4.1"
+httpx = "^0.28.1"
+fastapi = {version = "0.115.12", extras = ["all"]}
 
 [tool.black]
 line-length = 120
