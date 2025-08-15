@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from typing import List
 from unittest.mock import patch
 
 import pytest
@@ -22,6 +23,15 @@ class TestOutput(BaseModel):
     prediction: str
 
 
+# New models for batch processing tests
+class BatchInput(BaseModel):
+    inputs: List[TestInput]
+
+
+class BatchOutput(BaseModel):
+    outputs: List[TestOutput]
+
+
 # Define synchronous and asynchronous prediction functions for testing
 def sync_predict(data: TestInput) -> TestOutput:
     """A simple synchronous prediction function for tests."""
@@ -32,6 +42,17 @@ async def async_predict(data: TestInput) -> TestOutput:
     """A simple asynchronous prediction function for tests."""
     await asyncio.sleep(0.01)  # Simulate a small I/O delay
     return TestOutput(prediction=f"Async prediction for: {data.text}")
+
+
+def sync_predict_dict(data: TestInput) -> dict:
+    """A sync function that returns a raw dictionary."""
+    return {"prediction": f"Sync dict prediction for: {data.text}"}
+
+
+def predict_batch(data: BatchInput) -> BatchOutput:
+    """A function that processes a batch of inputs."""
+    outputs = [TestOutput(prediction=f"Batch prediction for: {item.text}") for item in data.inputs]
+    return BatchOutput(outputs=outputs)
 
 
 # --- Pytest Fixtures for Different App Configurations ---
@@ -70,6 +91,7 @@ def sync_websocket_app():
         predict_func=sync_predict,
         http_endpoint=None,
         websocket_endpoint="/ws",
+        response_model=TestOutput,  # Added for consistency
     )
     with TestClient(app) as client:
         yield client
@@ -82,6 +104,7 @@ def async_websocket_app():
         predict_func=async_predict,
         http_endpoint=None,
         websocket_endpoint="/ws",
+        response_model=TestOutput,  # Added for consistency
     )
     with TestClient(app) as client:
         yield client
@@ -95,6 +118,32 @@ def full_app():
         response_model=TestOutput,
         http_endpoint="/predict",
         websocket_endpoint="/ws",
+    )
+    with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture
+def sync_dict_app():
+    """Provides a TestClient for an app with a sync func that returns a dict."""
+    app = create_app(
+        predict_func=sync_predict_dict,
+        response_model=TestOutput,
+        http_endpoint="/predict",
+        websocket_endpoint="/ws",
+    )
+    with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture
+def batch_app():
+    """Provides a TestClient for an app that handles batch predictions."""
+    app = create_app(
+        predict_func=predict_batch,
+        response_model=BatchOutput,
+        http_endpoint="/batch",
+        websocket_endpoint="/ws-batch",
     )
     with TestClient(app) as client:
         yield client
@@ -163,7 +212,41 @@ def test_websocket_endpoint_disabled():
         with client.websocket_connect("/ws"):
             pass  # Should not connect
 
+
 def test_raises_error_if_no_endpoints():
     """Tests that a ValueError is raised if both endpoints are None."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="At least one endpoint"):
         create_app(predict_func=sync_predict, http_endpoint=None, websocket_endpoint=None)
+
+
+def test_sync_dict_return(sync_dict_app):
+    """Tests response validation when the function returns a dict."""
+    # Test HTTP endpoint
+    response = sync_dict_app.post("/predict", json={"text": "dict test"})
+    assert response.status_code == 200
+    assert response.json() == {"prediction": "Sync dict prediction for: dict test"}
+
+    # Test WebSocket endpoint
+    with sync_dict_app.websocket_connect("/ws") as websocket:
+        websocket.send_json({"text": "ws dict test"})
+        data = websocket.receive_json()
+        assert data == {"prediction": "Sync dict prediction for: ws dict test"}
+
+
+def test_batch_prediction(batch_app):
+    """Tests endpoints with input and output models containing lists."""
+    batch_payload = {"inputs": [{"text": "first"}, {"text": "second"}]}
+    expected_response = {
+        "outputs": [{"prediction": "Batch prediction for: first"}, {"prediction": "Batch prediction for: second"}]
+    }
+
+    # Test HTTP endpoint
+    response = batch_app.post("/batch", json=batch_payload)
+    assert response.status_code == 200
+    assert response.json() == expected_response
+
+    # Test WebSocket endpoint
+    with batch_app.websocket_connect("/ws-batch") as websocket:
+        websocket.send_json(batch_payload)
+        data = websocket.receive_json()
+        assert data == expected_response
