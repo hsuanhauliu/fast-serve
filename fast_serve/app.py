@@ -1,9 +1,18 @@
 import asyncio
 import inspect
+from dataclasses import dataclass
 from typing import Any, Callable, Coroutine
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+
+
+@dataclass
+class FastAPIConfig:
+    """
+    A simple configuration structure for the FastAPI application.
+    """
+    enable_docs: bool = True
 
 
 def create_app(
@@ -12,6 +21,7 @@ def create_app(
     http_endpoint: str | None = "/predict",
     websocket_endpoint: str | None = "/ws",
     http_methods: list[str] = ["POST"],
+    config: FastAPIConfig | None = None,
 ) -> FastAPI:
     """
     Creates a FastAPI application for machine learning model inference.
@@ -28,11 +38,20 @@ def create_app(
         websocket_endpoint: The path for the WebSocket endpoint. If None, no WebSocket endpoint is created.
                             Requires the `websockets` library to be installed.
         http_methods: A list of allowed HTTP methods for the HTTP endpoint.
+        config: An optional configuration object for the FastAPI app itself.
 
     Returns:
         A FastAPI application instance.
     """
-    app = FastAPI()
+    # Use default config if none is provided
+    if config is None:
+        config = FastAPIConfig()
+
+    # Instantiate the FastAPI app, enabling/disabling docs based on config
+    app = FastAPI(
+        docs_url="/docs" if config.enable_docs else None,
+        redoc_url="/redoc" if config.enable_docs else None,
+    )
 
     # Register the HTTP endpoint if one is provided
     if http_endpoint:
@@ -47,7 +66,6 @@ def create_app(
     if websocket_endpoint:
         from fastapi import WebSocket, WebSocketDisconnect
 
-        # --- FIX: Inspect the predict_func to find the input Pydantic model ---
         input_model = None
         try:
             sig = inspect.signature(predict_func)
@@ -60,9 +78,7 @@ def create_app(
                 ):
                     input_model = first_param.annotation
         except (ValueError, TypeError):
-            # Ignore if signature can't be determined or annotation isn't a class
             pass
-        # --- END FIX ---
 
         async def websocket_endpoint_func(websocket: WebSocket):
             await websocket.accept()
@@ -70,11 +86,9 @@ def create_app(
                 while True:
                     data = await websocket.receive_json()
 
-                    # --- FIX: Parse the incoming dict into the Pydantic model ---
                     input_data = data
                     if input_model:
                         try:
-                            # model_validate is for Pydantic v2, parse_obj is for v1
                             if hasattr(input_model, 'model_validate'):
                                 input_data = input_model.model_validate(data)
                             else:
@@ -82,22 +96,18 @@ def create_app(
                         except Exception as validation_error:
                             await websocket.send_json({"error": f"Invalid input: {validation_error}"})
                             continue
-                    # --- END FIX ---
 
                     if asyncio.iscoroutinefunction(predict_func):
                         prediction = await predict_func(input_data)
                     else:
                         prediction = predict_func(input_data)
 
-                    # --- FIX: Convert Pydantic output model to dict for JSON ---
                     output_data = prediction
                     if isinstance(prediction, BaseModel):
-                        # model_dump is for Pydantic v2, dict is for v1
                         if hasattr(prediction, 'model_dump'):
                             output_data = prediction.model_dump()
                         else:
                             output_data = prediction.dict()
-                    # --- END FIX ---
 
                     await websocket.send_json(output_data)
             except WebSocketDisconnect:
@@ -126,11 +136,15 @@ if __name__ == "__main__":
         await asyncio.sleep(1)
         return ModelOutput(prediction=f"Async prediction for: {data.text}")
 
+    # Example of disabling the documentation endpoints
+    api_config = FastAPIConfig(enable_docs=True)
+
     app = create_app(
         predict_func=async_predict,
         response_model=ModelOutput,
         http_endpoint="/predict",
         websocket_endpoint="/ws",
+        config=api_config,
     )
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

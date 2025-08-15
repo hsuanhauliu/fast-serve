@@ -24,13 +24,9 @@ This simple library is built on top of [FastAPI](https://fastapi.tiangolo.com/),
 To run the `examples/`, do:
 
 ```bash
-poetry env use python3.9    # create a virtual environment
-eval $(poetry env activate) # activate virtual environment
 poetry install              # install all dependencies
-uvicorn examples.minimal:app --reload   # run example
+poetry run uvicorn examples.minimal:app --reload   # run example
 ```
-
-Then, <http://127.0.0.1:8000/docs> should be accessible.
 
 ### Tests
 
